@@ -70,7 +70,7 @@ document.addEventListener('submit',async e=>{if(!state)return;e.preventDefault()
  }catch(e){error(e);}finally{busy=false;}});
 function connectivity(){ $('#offline').textContent=navigator.onLine?'Local · privado':'Sin conexión';}addEventListener('online',connectivity);addEventListener('offline',connectivity);
 
-let pendingUrl=location.href,waitingWorker,authPending=false,lastActivity=Date.now(),hiddenAt=0,failures=0;
+let pendingUrl=location.href,waitingWorker,authPending=false,lastActivity=Date.now(),hiddenAt=0,failures=0,lockRequested=false;
 if(location.hash||location.search)history.replaceState(null,'',location.pathname);
 const lockButton=document.createElement('button');lockButton.textContent='Bloquear';lockButton.dataset.action='lock';lockButton.hidden=true;document.querySelector('header').append(lockButton);
 const updateButton=document.createElement('button');updateButton.textContent='Actualizar aplicación';updateButton.dataset.action='update';updateButton.hidden=true;document.querySelector('header').append(updateButton);
@@ -82,11 +82,12 @@ async function gate(){lockButton.hidden=true;document.querySelector('nav').hidde
  $('#unlock-form').addEventListener('submit',async e=>{e.preventDefault();e.stopPropagation();if(authPending)return;authPending=true;const form=e.currentTarget;const button=form.querySelector('button');button.disabled=true;try{if(setup){checkPassword(form.elements.password.value);if(form.elements.password.value!==form.elements.repeat.value)throw new Error('Las contraseñas no coinciden.');}if(failures)await new Promise(r=>setTimeout(r,Math.min(8000,failures*1000)));const result=await (setup?initializeVault:unlockVault)(form.elements.password.value);form.reset();state=result.state;revision=result.revision;failures=0;lastActivity=Date.now();document.querySelector('nav').hidden=false;lockButton.hidden=false;render();connectivity();await incoming();}catch(err){failures++;$('#auth-error').textContent=err.message;}finally{authPending=false;if(button.isConnected)button.disabled=false;}});
 }
 for(const event of ['pointerdown','keydown','input'])addEventListener(event,()=>lastActivity=Date.now(),{passive:true});
-document.addEventListener('visibilitychange',()=>{document.body.classList.toggle('privacy-hidden',document.hidden);if(document.hidden)hiddenAt=Date.now();else{if(state&&hiddenAt&&Date.now()-hiddenAt>=60000&&!busy)lockApp().catch(error);hiddenAt=0;}});
-setInterval(()=>{if(state&&!busy&&!authPending&&(Date.now()-lastActivity>=300000||(document.hidden&&hiddenAt&&Date.now()-hiddenAt>=60000)))lockApp().catch(error);},1000);
+document.addEventListener('visibilitychange',()=>{if(document.hidden){document.body.classList.add('privacy-hidden');hiddenAt=Date.now();}else{if(state&&hiddenAt&&Date.now()-hiddenAt>=60000){lockRequested=true;if(!busy&&!authPending){lockRequested=false;lockApp().catch(error);}}else document.body.classList.remove('privacy-hidden');hiddenAt=0;}});
+setInterval(()=>{if(state&&!busy&&!authPending&&(lockRequested||Date.now()-lastActivity>=300000||(document.hidden&&hiddenAt&&Date.now()-hiddenAt>=60000))){lockRequested=false;lockApp().catch(error);}},1000);
 addEventListener('pagehide',()=>{lockVault();state=null;draft=null;importPeople=[];pendingUrl=null;content.replaceChildren();$('#dialog-body').replaceChildren();viewer.querySelector('img').removeAttribute('src');});
 addEventListener('pageshow',e=>{if(e.persisted)location.reload();});
 async function prepareOffline(){if(!('serviceWorker'in navigator))return;const registration=await navigator.serviceWorker.register('./sw.js');const offer=()=>{if(registration.waiting){waitingWorker=registration.waiting;updateButton.hidden=false;}};offer();registration.addEventListener('updatefound',()=>{const worker=registration.installing;worker?.addEventListener('statechange',()=>{if(worker.state==='installed')offer();});});navigator.serviceWorker.addEventListener('message',e=>{if(e.data?.type==='UPDATE_BLOCKED')toast('Cierra las otras ventanas de esta aplicación antes de actualizar.');});navigator.serviceWorker.addEventListener('controllerchange',()=>{if(waitingWorker)location.reload();});await navigator.serviceWorker.ready;toast('Disponible sin conexión.');registration.update().catch(()=>{});}
 try{if(window.top!==window.self)throw new Error('Abre la aplicación directamente, fuera de otras páginas.');if(!isSecureContext||!crypto.subtle)throw new Error('Abre la aplicación mediante HTTPS o localhost.');await openDB();await gate();prepareOffline().catch(()=>toast('No se ha preparado el modo sin conexión. Vuelve a abrir con conexión.'));}catch(e){content.innerHTML='<div class="notice"></div>';content.firstElementChild.textContent=e.message;}
+
 
 
