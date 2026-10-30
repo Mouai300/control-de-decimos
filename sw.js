@@ -1,5 +1,5 @@
 const PREFIX='decimos:'+self.registration.scope+':';
-const CACHE=PREFIX+'2.0.2';
+const CACHE=PREFIX+'2.0.3-logo';
 const ASSETS=['./','./index.html','./style.css','./app.js','./core.js','./db.js','./crypto.js','./images.js','./security-ui.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS.map(p=>new Request(new URL(p,self.registration.scope),{cache:'reload'}))))));
 self.addEventListener('message',e=>{if(e.data?.type!=='ACTIVATE')return;e.waitUntil((async()=>{const clients=await self.clients.matchAll({type:'window',includeUncontrolled:true});const own=clients.filter(c=>c.url.startsWith(self.registration.scope));if(own.length>1){e.source?.postMessage({type:'UPDATE_BLOCKED'});return;}await self.skipWaiting();})());});
