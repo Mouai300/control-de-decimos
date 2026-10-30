@@ -1,0 +1,18 @@
+import * as a from '../db.js?test=a';import * as b from '../db.js?test=b';
+import {verifyPhotos,photoData} from '../images.js';import {decryptBackup} from '../crypto.js';
+const log=s=>document.querySelector('#results').textContent+=s+'\n';
+const assert=(condition,message)=>{if(!condition)throw new Error(message);};
+async function rejects(fn){try{await fn();}catch{return;}throw new Error('Se esperaba rechazo.');}
+document.querySelector('#run').onclick=async()=>{document.querySelector('#run').disabled=true;try{
+const name='decimos-test-'+crypto.randomUUID();const pass='Prueba ficticia para auditoría 2026';const other='Otra contraseña ficticia muy larga';
+const image=await photoData(await (await fetch('../icon-192.png')).blob());
+const legacy={people:[{id:'p',name:'Persona ficticia',phone:'',notes:''}],deliveries:[{id:'d',personId:'p',year:2026,status:'pending',notes:'',photos:[image],tickets:[{id:'t',number:'00007',quantity:2,series:'',fraction:'',photos:[image]}]}]};
+await new Promise((resolve,reject)=>{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>r.result.createObjectStore('data');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const tx=r.result.transaction('data','readwrite');tx.objectStore('data').put({revision:3,state:legacy},'state');tx.oncomplete=()=>{r.result.close();resolve();};};});
+await a.openDB(name);const migrated=await a.initializeVault(pass);assert(migrated.state.deliveries[0].tickets[0].number==='00007','Ceros perdidos');const record=await a.readRecord();assert(!record.state&&!JSON.stringify(record).includes('Persona ficticia'),'Datos en claro');assert(record.revision===4,'Revisión incorrecta');log('PASS migración atómica v1 → v2, fotos y ceros conservados; registro sin texto personal.');
+a.lockVault();await rejects(()=>a.readState());await rejects(()=>a.unlockVault('incorrecta'));await a.unlockVault(pass);log('PASS bloqueo, contraseña incorrecta y desbloqueo.');
+await b.openDB(name);const stale=await b.unlockVault(pass);const next=structuredClone(stale.state);next.people[0].notes='CAMBIO RECIENTE';await a.saveState(next,stale.revision);const backup=await b.exportVault();const recovered=await decryptBackup(backup,pass);assert(recovered.people[0].notes==='CAMBIO RECIENTE','Copia antigua');await rejects(()=>b.saveState(stale.state,stale.revision));assert((await a.readState()).state.people[0].notes==='CAMBIO RECIENTE','Sobrescritura');log('PASS copia desde última revisión y conflicto entre dos conexiones sin sobrescritura.');
+await verifyPhotos(recovered);const bad=structuredClone(recovered);bad.deliveries[0].photos=['data:image/jpeg;base64,AAAA'];await rejects(()=>verifyPhotos(bad));assert((await a.readState()).state.deliveries[0].photos[0]===image,'Foto cambiada');log('PASS validación real de fotos y rechazo sin modificación de la base.');
+await a.changePassword(pass,other);a.lockVault();await rejects(()=>a.unlockVault(pass));await a.unlockVault(other);assert((await decryptBackup(backup,pass)).people.length===1,'Copia antigua ilegible');await rejects(()=>b.saveState(stale.state,stale.revision));log('PASS cambio de contraseña; copia anterior conserva contraseña anterior.');
+const latest=await a.readState();const invalid=structuredClone(latest.state);invalid.deliveries[0].tickets[0].quantity=0;await rejects(()=>a.saveState(invalid,latest.revision));assert((await a.readState()).revision===latest.revision,'Cambio tras fallo');log('PASS guardado inválido no cambia revisión ni registros.');
+log('RESULTADO: 6 grupos de pruebas de navegador aprobados.');
+}catch(e){log('FAIL '+e.message);console.error(e);}finally{document.querySelector('#run').disabled=false;}};

@@ -1,0 +1,19 @@
+name: Security and data tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Validate JavaScript and run security tests
+        run: |
+          node --version
+          for file in app.js core.js crypto.js db.js images.js security-ui.js sw.js; do node --check "$file"; done
+          node --test tests/*.test.mjs
